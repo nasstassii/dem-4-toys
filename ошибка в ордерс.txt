@@ -1,0 +1,51 @@
+-- Исправляем дату в raw-таблице
+UPDATE orders_import_raw 
+SET order_date_text = '28.02.2025' 
+WHERE order_date_text = '30.02.2025';
+
+
+
+
+INSERT IGNORE INTO orders (
+    order_number, article_text, order_date, delivery_date,
+    pickup_point_id, client_user_id, pickup_code, status_id
+)
+SELECT
+    CAST(TRIM(o.order_number_text) AS UNSIGNED),
+    TRIM(o.articles_text),
+    STR_TO_DATE(TRIM(o.order_date_text), '%d.%m.%Y'),
+    STR_TO_DATE(TRIM(o.delivery_date_text), '%d.%m.%Y'),
+    CAST(TRIM(o.pickup_point_text) AS UNSIGNED),
+    u.user_id,
+    CAST(TRIM(o.pickup_code_text) AS UNSIGNED),
+    st.status_id
+FROM orders_import_raw o
+LEFT JOIN users u ON u.full_name = TRIM(o.client_fio_text)
+JOIN order_statuses st ON st.status_name = REPLACE(TRIM(o.status_text), '\r', '')
+WHERE TRIM(o.order_number_text) <> '';
+
+
+
+
+-- Сначала очистим order_items
+DELETE FROM order_items;
+
+-- Затем правильный INSERT
+INSERT INTO order_items (order_id, product_id, quantity)
+SELECT 
+    o.order_id,
+    pr.product_id,
+    CAST(TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(REPLACE(o.article_text, ' ', ''), ',', 2), ',', -1)) AS UNSIGNED) AS qty
+FROM orders o
+JOIN products pr ON pr.article = TRIM(SUBSTRING_INDEX(REPLACE(o.article_text, ' ', ''), ',', 1))
+WHERE TRIM(o.article_text) <> ''
+
+UNION ALL
+
+SELECT 
+    o.order_id,
+    pr.product_id,
+    CAST(TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(REPLACE(o.article_text, ' ', ''), ',', 4), ',', -1)) AS UNSIGNED) AS qty
+FROM orders o
+JOIN products pr ON pr.article = TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(REPLACE(o.article_text, ' ', ''), ',', 3), ',', -1))
+WHERE TRIM(o.article_text) <> '';
